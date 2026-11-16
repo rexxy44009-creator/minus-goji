@@ -379,7 +379,6 @@ public class GodzillaEntity extends Monster implements GeoEntity {
         return !effect.getEffect().is(MobEffects.WITHER) && super.canBeAffected(effect);
     }
     @Override public boolean ignoreExplosion(Explosion explosion) { return true; }
-    @Override public boolean canBreatheUnderwater() { return true; }
     @Override public boolean isPushedByFluid() { return false; }
     @Override public boolean isPushable() { return false; }
     @Override public boolean causeFallDamage(float distance, float multiplier, DamageSource source) { return false; }
