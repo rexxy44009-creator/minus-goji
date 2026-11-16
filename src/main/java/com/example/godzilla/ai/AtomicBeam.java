@@ -130,7 +130,6 @@ public final class AtomicBeam {
         cloud.setDuration(GodzillaTuning.RADIATION_DURATION_TICKS);
         cloud.setRadiusPerTick(-GodzillaTuning.RADIATION_RADIUS * 0.5F / GodzillaTuning.RADIATION_DURATION_TICKS); // shrinks to half
         cloud.setWaitTime(0);
-        cloud.setReapplicationDelay(20);
         cloud.setParticle(AtomicFx.RADIATION);
         // AreaEffectCloud applies a quarter of the listed duration, so 400 here = 5 s of effect per application.
         cloud.addEffect(new MobEffectInstance(MobEffects.WITHER, 400, 1));
