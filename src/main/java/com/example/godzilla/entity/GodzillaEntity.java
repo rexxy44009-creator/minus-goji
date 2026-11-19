@@ -74,14 +74,18 @@ public class GodzillaEntity extends Monster implements GeoEntity {
     public static final int ACT_BITE = 5;
     public static final int ACT_TAIL = 6;
     public static final int ACT_DEATH = 7;
+    public static final int ACT_STOMP = 8;
+    public static final int ACT_INHALE = 9;
 
     public static final byte EVENT_STOMP = 110;
     public static final byte EVENT_ROAR = 111;
+    public static final byte EVENT_BLAST = 112;
+    public static final byte EVENT_STOMP_ATTACK = 113;
 
     public static final int DEATH_TICKS = 100;
     /** Where the mouth is relative to the entity, in blocks (matches the placeholder model; tune for yours). */
-    public static final double MOUTH_FORWARD = 5.0;
-    public static final double MOUTH_HEIGHT = 18.0;
+    public static final double MOUTH_FORWARD = PlateProfile.MOUTH_FORWARD;
+    public static final double MOUTH_HEIGHT = PlateProfile.MOUTH_UP;
 
     private static final EntityDataAccessor<Integer> DATA_ACTION = SynchedEntityData.defineId(GodzillaEntity.class, EntityDataSerializers.INT);
     private static final EntityDataAccessor<Float> DATA_BEAM_YAW = SynchedEntityData.defineId(GodzillaEntity.class, EntityDataSerializers.FLOAT);
@@ -99,6 +103,8 @@ public class GodzillaEntity extends Monster implements GeoEntity {
     private static final RawAnimation A_BITE = RawAnimation.begin().thenPlayAndHold(ANIM + "bite");
     private static final RawAnimation A_TAIL = RawAnimation.begin().thenPlayAndHold(ANIM + "tail_swipe");
     private static final RawAnimation A_DEATH = RawAnimation.begin().thenPlayAndHold(ANIM + "death");
+    private static final RawAnimation A_STOMP = RawAnimation.begin().thenPlayAndHold(ANIM + "stomp");
+    private static final RawAnimation A_INHALE = RawAnimation.begin().thenPlayAndHold(ANIM + "inhale");
 
     private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
     private final ServerBossEvent bossEvent =
@@ -219,18 +225,48 @@ public class GodzillaEntity extends Monster implements GeoEntity {
         return (float) (Mth.atan2(to.z - from.z, to.x - from.x) * Mth.RAD_TO_DEG) - 90.0F;
     }
 
+    /** Tick (within the CHARGE stage) at which dorsal plate i starts pushing out. 0 = tail tip ... n-1 = upper back. */
+    public static int plateStartTick(int index) {
+        int n = GodzillaTuning.PLATE_COUNT;
+        return (int) (index / (float) (n - 1) * GodzillaTuning.CHARGE_TICKS * 0.62F);
+    }
+    public static final int PLATE_PUSH_TICKS = 14;      // how long one plate takes to slide out
+    public static final int PLATE_RETRACT_TICKS = 9;    // ...and to snap back in
+
+    /**
+     * How far dorsal plate i is pushed out right now, 0 (resting) .. 1 (fully out).
+     * CHARGE: plates slide out one by one, tail first.  INHALE: they snap back in a quick ripple, tail first.
+     */
+    public float getPlateExtension(int index, float partialTick) {
+        int n = GodzillaTuning.PLATE_COUNT;
+        float t = getActionTicks() + partialTick;
+        switch (getAction()) {
+            case ACT_CHARGE: {
+                float p = (t - plateStartTick(index)) / PLATE_PUSH_TICKS;
+                p = Mth.clamp(p, 0.0F, 1.0F);
+                return p * p * (3.0F - 2.0F * p);          // smoothstep
+            }
+            case ACT_INHALE: {
+                float start = index / (float) (n - 1) * GodzillaTuning.INHALE_TICKS * 0.45F;
+                float p = Mth.clamp((t - start) / PLATE_RETRACT_TICKS, 0.0F, 1.0F);
+                return 1.0F - p * p;
+            }
+            default:
+                return 0.0F;
+        }
+    }
+
     /** Which dorsal plates are glowing right now (called by the client model every frame). */
     public boolean isPlateLit(int index, float partialTick) {
         int n = GodzillaTuning.PLATE_COUNT;
         float t = getActionTicks() + partialTick;
         switch (getAction()) {
-            case ACT_CHARGE: {   // lights up one by one, tail (0) -> head (n-1)
-                float p = Mth.clamp(t / GodzillaTuning.CHARGE_TICKS, 0.0F, 1.0F);
-                return index < Math.min(n, (int) (p * n) + 1);
-            }
+            case ACT_CHARGE:   // lights up the moment it starts pushing out
+                return t >= plateStartTick(index);
+            case ACT_INHALE:
             case ACT_FIRE:
                 return true;
-            case ACT_VENT: {     // cools down tail -> head
+            case ACT_VENT: {   // cools down tail -> head
                 float p = Mth.clamp(t / GodzillaTuning.VENT_TICKS, 0.0F, 1.0F);
                 return index >= (int) (p * n);
             }
@@ -243,6 +279,7 @@ public class GodzillaEntity extends Monster implements GeoEntity {
         float t = getActionTicks() + partialTick;
         switch (getAction()) {
             case ACT_CHARGE: return t / GodzillaTuning.CHARGE_TICKS > 0.5F;
+            case ACT_INHALE:
             case ACT_FIRE: return true;
             case ACT_VENT: return t < 15.0F;
             default: return false;
@@ -326,15 +363,15 @@ public class GodzillaEntity extends Monster implements GeoEntity {
         float r = this.yBodyRot * Mth.DEG_TO_RAD;
         Vec3 fwd = new Vec3(-Mth.sin(r), 0.0, Mth.cos(r));
         Vec3 side = new Vec3(Mth.cos(r), 0.0, Mth.sin(r));
-        Vec3 foot = this.position().add(fwd.scale(1.5)).add(side.scale(this.leftFoot ? 2.0 : -2.0));
+        Vec3 foot = this.position().add(fwd.scale(3.0)).add(side.scale(this.leftFoot ? 3.5 : -3.5));
 
-        this.playSound(ModSounds.STEP.get(), 8.0F, 0.85F + this.random.nextFloat() * 0.2F);
+        this.playSound(ModSounds.STEP.get(), 10.0F, 0.75F + this.random.nextFloat() * 0.2F);
         level.broadcastEntityEvent(this, EVENT_STOMP);   // client: camera shake
 
         BlockState ground = level.getBlockState(BlockPos.containing(foot.x, foot.y - 0.5, foot.z));
         if (!ground.isAir()) {
             level.sendParticles(new BlockParticleOption(ParticleTypes.BLOCK, ground),
-                    foot.x, foot.y + 0.2, foot.z, 40, 1.8, 0.3, 1.8, 0.15);
+                    foot.x, foot.y + 0.2, foot.z, 70, 3.0, 0.4, 3.0, 0.2);
         }
 
         AABB zone = new AABB(foot, foot).inflate(GodzillaTuning.STOMP_RADIUS, 2.0, GodzillaTuning.STOMP_RADIUS);
@@ -353,6 +390,10 @@ public class GodzillaEntity extends Monster implements GeoEntity {
             GodzillaClientHooks.onStomp(this);
         } else if (id == EVENT_ROAR) {
             GodzillaClientHooks.onRoar(this);
+        } else if (id == EVENT_BLAST) {
+            GodzillaClientHooks.onBlast(this);
+        } else if (id == EVENT_STOMP_ATTACK) {
+            GodzillaClientHooks.onStompAttack(this);
         } else {
             super.handleEntityEvent(id);
         }
@@ -361,7 +402,7 @@ public class GodzillaEntity extends Monster implements GeoEntity {
     @Override
     public AABB getBoundingBoxForCulling() {
         // Tail sticks out of the hitbox; while firing, the beam does too (so it doesn't vanish when he's off-screen).
-        return isFiring() ? this.getBoundingBox().inflate(95.0, 30.0, 95.0) : this.getBoundingBox().inflate(16.0, 2.0, 16.0);
+        return isFiring() ? this.getBoundingBox().inflate(140.0, 40.0, 140.0) : this.getBoundingBox().inflate(50.0, 4.0, 50.0);
     }
 
     // ------------------------------------------------------------------ immunities / physics
@@ -444,6 +485,8 @@ public class GodzillaEntity extends Monster implements GeoEntity {
             case ACT_BITE -> A_BITE;
             case ACT_TAIL -> A_TAIL;
             case ACT_DEATH -> A_DEATH;
+            case ACT_STOMP -> A_STOMP;
+            case ACT_INHALE -> A_INHALE;
             default -> state.isMoving() ? A_WALK : A_IDLE;
         };
         return state.setAndContinue(anim);

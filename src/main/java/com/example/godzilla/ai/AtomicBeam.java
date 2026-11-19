@@ -38,11 +38,11 @@ public final class AtomicBeam {
         if (grief && fireTick % GodzillaTuning.CRATER_INTERVAL_TICKS == 0) craters(g, level, origin, dir, length);
 
         // light show: white-hot core at the mouth, sparks all along the ray
-        AtomicFx.send(level, AtomicFx.WHITE_CORE, origin.x, origin.y, origin.z, 6, 0.8, 0.8, 0.8, 0.0);
+        AtomicFx.send(level, AtomicFx.WHITE_CORE, origin.x, origin.y, origin.z, 8, 1.2, 1.2, 1.2, 0.0);
         if (fireTick % 3 == 0) {
-            for (double d = 5.0; d <= length; d += 6.0) {
+            for (double d = 8.0; d <= length; d += 10.0) {
                 Vec3 p = origin.add(dir.scale(d));
-                AtomicFx.send(level, ParticleTypes.ELECTRIC_SPARK, p.x, p.y, p.z, 6, 2.5, 2.5, 2.5, 0.3);
+                AtomicFx.send(level, ParticleTypes.ELECTRIC_SPARK, p.x, p.y, p.z, 8, 3.5, 3.5, 3.5, 0.3);
             }
         }
     }
@@ -52,7 +52,7 @@ public final class AtomicBeam {
         int budget = GodzillaTuning.BEAM_BLOCKS_PER_TICK;
         double r = GodzillaTuning.BEAM_RADIUS;
         BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
-        for (double d = 3.0; d <= length && budget > 0; d += r * 0.75) {
+        for (double d = 4.0; d <= length && budget > 0; d += r * 0.75) {
             budget -= carveSphere(level, pos, origin.add(dir.scale(d)), r, budget);
         }
     }
@@ -99,18 +99,18 @@ public final class AtomicBeam {
 
     // ---------------------------------------------------------------- craters + radiation
     private static void craters(GodzillaEntity g, ServerLevel level, Vec3 origin, Vec3 dir, double length) {
-        if (length < 12.0) return;
+        if (length < 18.0) return;
         boolean placedCloud = false;
         for (int n = 0; n < 2; n++) {
-            double d = 8.0 + level.random.nextDouble() * (length - 8.0);
+            double d = 12.0 + level.random.nextDouble() * (length - 12.0);
             Vec3 c = origin.add(dir.scale(d));
-            Vec3 ground = surfaceBelow(level, g, c.add(0.0, 30.0, 0.0), 40.0);
-            if (ground == null || Math.abs(c.y - ground.y) > 8.0) continue;   // beam isn't touching ground here
+            Vec3 ground = surfaceBelow(level, g, c.add(0.0, 40.0, 0.0), 80.0);
+            if (ground == null || Math.abs(c.y - ground.y) > 12.0) continue;   // beam isn't touching ground here
 
             level.explode(g, ground.x, ground.y + 0.5, ground.z, GodzillaTuning.CRATER_POWER, false, Level.ExplosionInteraction.MOB);
 
             if (!placedCloud) {   // one hazard zone per volley, sitting in the freshly made crater
-                Vec3 floor = surfaceBelow(level, g, new Vec3(ground.x, ground.y + 6.0, ground.z), 18.0);
+                Vec3 floor = surfaceBelow(level, g, new Vec3(ground.x, ground.y + 8.0, ground.z), 24.0);
                 spawnRadiation(level, floor != null ? floor : ground);
                 placedCloud = true;
             }

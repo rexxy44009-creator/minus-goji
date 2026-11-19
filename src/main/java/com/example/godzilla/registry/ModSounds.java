@@ -14,7 +14,10 @@ public final class ModSounds {
     public static final DeferredHolder<SoundEvent, SoundEvent> ROAR   = register("godzilla.roar", 220f);
     public static final DeferredHolder<SoundEvent, SoundEvent> CHARGE = register("godzilla.charge", 160f);
     public static final DeferredHolder<SoundEvent, SoundEvent> PLATE  = register("godzilla.plate", 64f);
+    public static final DeferredHolder<SoundEvent, SoundEvent> INHALE = register("godzilla.inhale", 200f);
+    public static final DeferredHolder<SoundEvent, SoundEvent> STOMP  = register("godzilla.stomp", 200f);
     public static final DeferredHolder<SoundEvent, SoundEvent> BEAM   = register("godzilla.beam", 220f);
+    public static final DeferredHolder<SoundEvent, SoundEvent> BLAST  = register("godzilla.blast", 300f);
     public static final DeferredHolder<SoundEvent, SoundEvent> STEP   = register("godzilla.step", 120f);
     public static final DeferredHolder<SoundEvent, SoundEvent> BITE   = register("godzilla.bite", 64f);
     public static final DeferredHolder<SoundEvent, SoundEvent> TAIL   = register("godzilla.tail", 64f);

@@ -22,10 +22,19 @@ public final class GodzillaClientHooks {
         CameraShake.add(0.9F * falloff(g, 130.0F), 0.9F);
     }
 
+    public static void onStompAttack(GodzillaEntity g) {
+        CameraShake.add(0.8F * falloff(g, 160.0F), 0.9F);
+    }
+
+    public static void onBlast(GodzillaEntity g) {
+        CameraShake.add(1.0F * falloff(g, 320.0F), 1.0F);   // the mushroom-cloud blast: the biggest shake in the mod
+    }
+
     /** Called every client tick for every Godzilla in range. */
     public static void tick(GodzillaEntity g) {
         switch (g.getAction()) {
             case GodzillaEntity.ACT_ROAR -> CameraShake.add(0.05F * falloff(g, 130.0F), 0.5F);
+            case GodzillaEntity.ACT_INHALE -> CameraShake.add(0.05F * falloff(g, 120.0F), 0.45F);
             case GodzillaEntity.ACT_CHARGE -> CameraShake.add(0.03F * falloff(g, 100.0F) * ((float) g.getActionTicks() / 80.0F), 0.4F);
             case GodzillaEntity.ACT_FIRE -> CameraShake.add(0.08F * falloff(g, 160.0F), 0.7F);
             case GodzillaEntity.ACT_DEATH -> CameraShake.add(0.05F * falloff(g, 120.0F), 0.5F);

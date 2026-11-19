@@ -3,6 +3,7 @@ package com.example.godzilla.client;
 import com.example.godzilla.GodzillaMod;
 import com.example.godzilla.GodzillaTuning;
 import com.example.godzilla.entity.GodzillaEntity;
+import com.example.godzilla.entity.PlateProfile;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.util.Mth;
 import software.bernie.geckolib.animation.AnimationState;
@@ -34,8 +35,16 @@ public class GodzillaModel extends GeoModel<GodzillaEntity> {
 
         float pt = state.getPartialTick();
         for (int i = 0; i < GodzillaTuning.PLATE_COUNT; i++) {
+            float ext = g.getPlateExtension(i, pt);          // 0 = resting, 1 = pushed out
+            float push = ext * PlateProfile.PUSH_UNITS;
+            float scale = 1.0F + ext * PlateProfile.PUSH_SCALE;
+            var plate = getAnimationProcessor().getBone(String.format("plate_%02d", i));
             var glow = getAnimationProcessor().getBone(String.format("plate_glow_%02d", i));
-            if (glow != null) glow.setHidden(!g.isPlateLit(i, pt));
+            if (plate != null) { plate.setPosY(push); plate.setScaleX(scale); plate.setScaleY(scale); plate.setScaleZ(scale); }
+            if (glow != null) {
+                glow.setPosY(push); glow.setScaleX(scale); glow.setScaleY(scale); glow.setScaleZ(scale);
+                glow.setHidden(!g.isPlateLit(i, pt));
+            }
         }
         var mouth = getAnimationProcessor().getBone("mouth_glow");
         if (mouth != null) mouth.setHidden(!g.isMouthGlowing(pt));

@@ -13,4 +13,5 @@ Test it in-game without installing: `gradlew runClient`, then `/summon godzilla_
 ## Installing the jar
 Minecraft 1.21.1 + NeoForge 21.1.x, and **GeckoLib 4.8.x for NeoForge 1.21.1** (CurseForge/Modrinth) in the same `mods` folder, on both client and server.
 
-See MOD_README.md for how it works, how to swap in your own model, and the few spots that may need a small fix if the first compile complains (this code has not been compiled yet).
+See MOD_README.md for how it works and the few spots that may need a small fix if the first compile complains (this code has not been compiled yet).
+Keep your GitHub repository PRIVATE: the model data is derived from a third-party Sketchfab model (see CREDITS.md).
