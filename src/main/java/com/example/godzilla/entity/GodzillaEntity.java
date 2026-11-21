@@ -1,8 +1,20 @@
+package com.example.godzilla.entity;
+private final AnimatableInstanceCache geoCache = GeckoLibUtil.createInstanceCache(this);
+
+@Override
+public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
+    // Register animation controllers here if needed
+}
+
+@Override
+public AnimatableInstanceCache getAnimatableInstanceCache() {
+    return this.geoCache;
+}
+public class GodzillaEntity extends Monster implements GeoEntity {
 import software.bernie.geckolib.animatable.GeoEntity;
 import software.bernie.geckolib.animatable.instance.AnimatableInstanceCache;
 import software.bernie.geckolib.animation.AnimatableManager;
 import software.bernie.geckolib.util.GeckoLibUtil;
-package com.example.godzilla.entity;
 
 import com.example.godzilla.GodzillaTuning;
 import com.example.godzilla.ai.GodzillaAtomicBreathGoal;
