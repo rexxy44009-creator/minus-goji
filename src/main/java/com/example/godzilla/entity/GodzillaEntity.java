@@ -163,4 +163,312 @@ public class GodzillaEntity extends Monster implements GeoEntity {
     /** Server only. Resets the action clock on both sides via onSyncedDataUpdated. */
     public void setAction(int action) { this.entityData.set(DATA_ACTION, action); }
 
-    public int getActionTicks()
+    public int getActionTicks() { return Math.max(0, this.tickCount - this.actionStartTick); }
+
+    public boolean isFiring() { return getAction() == ACT_FIRE; }
+
+    public float getBeamYaw() { return this.entityData.get(DATA_BEAM_YAW); }
+    public float getBeamPitch() { return this.entityData.get(DATA_BEAM_PITCH); }
+    public float getBeamLength() { return this.entityData.get(DATA_BEAM_LENGTH); }
+
+    public void setBeam(float yaw, float pitch, float length) {
+        this.entityData.set(DATA_BEAM_YAW, yaw);
+        this.entityData.set(DATA_BEAM_PITCH, pitch);
+        this.entityData.set(DATA_BEAM_LENGTH, length);
+    }
+
+    public void setBeamLength(float length) { this.entityData.set(DATA_BEAM_LENGTH, length); }
+
+    public long getBreathReadyTime() { return breathReadyTime; }
+    public void setBreathReadyTime(long gameTime) { this.breathReadyTime = gameTime; }
+
+    @Override
+    public void onSyncedDataUpdated(EntityDataAccessor<?> key) {
+        super.onSyncedDataUpdated(key);
+        if (DATA_ACTION.equals(key)) {
+            this.actionStartTick = this.tickCount;
+        }
+    }
+
+    // ------------------------------------------------------------------ geometry helpers
+    public Vec3 getForwardHoriz() {
+        float r = this.yBodyRot * Mth.DEG_TO_RAD;
+        return new Vec3(-Mth.sin(r), 0.0, Mth.cos(r));
+    }
+
+    public Vec3 getMouthOffset(float bodyYawDeg) {
+        float r = bodyYawDeg * Mth.DEG_TO_RAD;
+        return new Vec3(-Mth.sin(r) * MOUTH_FORWARD, MOUTH_HEIGHT, Mth.cos(r) * MOUTH_FORWARD);
+    }
+
+    public Vec3 getMouthPosition() { return this.position().add(getMouthOffset(this.yBodyRot)); }
+
+    /** World position of dorsal plate i (0 = tail tip ... 11 = neck). */
+    public Vec3 getPlateWorldPos(int index) {
+        int i = Mth.clamp(index, 0, PlateProfile.FORWARD.length - 1);
+        return this.position().add(getForwardHoriz().scale(PlateProfile.FORWARD[i])).add(0.0, PlateProfile.UP[i], 0.0);
+    }
+
+    /** Turn the whole body (not just the head) toward a yaw, at most maxStep degrees per tick. */
+    public void turnBodyTowards(float targetYaw, float maxStep) {
+        float y = Mth.approachDegrees(this.getYRot(), targetYaw, maxStep);
+        this.setYRot(y);
+        this.yBodyRot = y;
+        this.yHeadRot = y;
+    }
+
+    public static float yawTo(Vec3 from, Vec3 to) {
+        return (float) (Mth.atan2(to.z - from.z, to.x - from.x) * Mth.RAD_TO_DEG) - 90.0F;
+    }
+
+    /** Tick (within the CHARGE stage) at which dorsal plate i starts pushing out. 0 = tail tip ... n-1 = upper back. */
+    public static int plateStartTick(int index) {
+        int n = GodzillaTuning.PLATE_COUNT;
+        return (int) (index / (float) (n - 1) * GodzillaTuning.CHARGE_TICKS * 0.62F);
+    }
+    public static final int PLATE_PUSH_TICKS = 14;      // how long one plate takes to slide out
+    public static final int PLATE_RETRACT_TICKS = 9;    // ...and to snap back in
+
+    /**
+     * How far dorsal plate i is pushed out right now, 0 (resting) .. 1 (fully out).
+     * CHARGE: plates slide out one by one, tail first.  INHALE: they snap back in a quick ripple, tail first.
+     */
+    public float getPlateExtension(int index, float partialTick) {
+        int n = GodzillaTuning.PLATE_COUNT;
+        float t = getActionTicks() + partialTick;
+        switch (getAction()) {
+            case ACT_CHARGE: {
+                float p = (t - plateStartTick(index)) / PLATE_PUSH_TICKS;
+                p = Mth.clamp(p, 0.0F, 1.0F);
+                return p * p * (3.0F - 2.0F * p);          // smoothstep
+            }
+            case ACT_INHALE: {
+                float start = index / (float) (n - 1) * GodzillaTuning.INHALE_TICKS * 0.45F;
+                float p = Mth.clamp((t - start) / PLATE_RETRACT_TICKS, 0.0F, 1.0F);
+                return 1.0F - p * p;
+            }
+            default:
+                return 0.0F;
+        }
+    }
+
+    /** Which dorsal plates are glowing right now (called by the client model every frame). */
+    public boolean isPlateLit(int index, float partialTick) {
+        int n = GodzillaTuning.PLATE_COUNT;
+        float t = getActionTicks() + partialTick;
+        switch (getAction()) {
+            case ACT_CHARGE:   // lights up the moment it starts pushing out
+                return t >= plateStartTick(index);
+            case ACT_INHALE:
+            case ACT_FIRE:
+                return true;
+            case ACT_VENT: {   // cools down tail -> head
+                float p = Mth.clamp(t / GodzillaTuning.VENT_TICKS, 0.0F, 1.0F);
+                return index >= (int) (p * n);
+            }
+            default:
+                return false;
+        }
+    }
+
+    public boolean isMouthGlowing(float partialTick) {
+        float t = getActionTicks() + partialTick;
+        switch (getAction()) {
+            case ACT_CHARGE: return t / GodzillaTuning.CHARGE_TICKS > 0.5F;
+            case ACT_INHALE:
+            case ACT_FIRE: return true;
+            case ACT_VENT: return t < 15.0F;
+            default: return false;
+        }
+    }
+
+    public boolean isValidVictim(LivingEntity e) {
+        if (e == this || e instanceof GodzillaEntity || !e.isAlive()) return false;
+        return !(e instanceof Player p && (p.isCreative() || p.isSpectator()));
+    }
+
+    /** Throw a living entity away from `from`. Works on players (hurtMarked syncs the velocity). */
+    public void launch(LivingEntity target, Vec3 from, double horizontal, double vertical) {
+        Vec3 away = target.position().subtract(from).multiply(1.0, 0.0, 1.0);
+        away = away.lengthSqr() < 1.0E-4 ? getForwardHoriz() : away.normalize();
+        target.setDeltaMovement(away.x * horizontal, vertical, away.z * horizontal);
+        target.hurtMarked = true;
+    }
+
+    // ------------------------------------------------------------------ tick
+    @Override
+    public void tick() {
+        super.tick();
+        if (this.level().isClientSide) {
+            float synced = this.entityData.get(DATA_WALK_PHASE);
+            this.walkPhasePrev = phaseInit ? this.walkPhase : synced;
+            this.walkPhase = synced;
+            this.phaseInit = true;
+            GodzillaClientHooks.tick(this);
+        }
+    }
+
+    @Override
+    protected void customServerAiStep() {
+        super.customServerAiStep();
+        this.bossEvent.setProgress(this.getHealth() / this.getMaxHealth());
+    }
+
+    @Override
+    public void aiStep() {
+        super.aiStep();
+        if (this.level().isClientSide || this.isDeadOrDying() || !(this.level() instanceof ServerLevel level)) return;
+
+        // Mob griefing: everything inside (and just in front of) the body is flattened.
+        if (this.tickCount % GodzillaTuning.GRIEF_INTERVAL_TICKS == 0
+                && level.getGameRules().getBoolean(GameRules.RULE_MOBGRIEFING)) {
+            smashBlocksInBody(level);
+        }
+
+        // Walk cycle: the phase advances with distance travelled; every PI of phase one foot lands (even = left, odd = right).
+        double moved = Math.hypot(this.getX() - this.xo, this.getZ() - this.zo);
+        if (this.onGround() && moved > 0.01 && this.getAction() == ACT_IDLE) {
+            float before = this.walkPhase;
+            this.walkPhase += (float) (moved / GodzillaTuning.STEP_LENGTH_BLOCKS * Math.PI);
+            this.entityData.set(DATA_WALK_PHASE, this.walkPhase);
+            int stepsBefore = (int) Math.floor(before / Math.PI), stepsAfter = (int) Math.floor(this.walkPhase / Math.PI);
+            if (stepsAfter != stepsBefore) {
+                stomp(level, (stepsAfter & 1) == 0);
+            }
+        }
+    }
+
+    private void smashBlocksInBody(ServerLevel level) {
+        AABB box = this.getBoundingBox().inflate(GodzillaTuning.GRIEF_HORIZONTAL_MARGIN, 0.0, GodzillaTuning.GRIEF_HORIZONTAL_MARGIN);
+        int minY = Mth.floor(box.minY + 0.01);   // never touch the ground he is standing on
+        int maxY = Mth.floor(box.maxY);
+        BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+        int broken = 0;
+        for (int y = minY; y <= maxY; y++) {
+            for (int x = Mth.floor(box.minX); x <= Mth.floor(box.maxX); x++) {
+                for (int z = Mth.floor(box.minZ); z <= Mth.floor(box.maxZ); z++) {
+                    pos.set(x, y, z);
+                    if (!level.hasChunkAt(pos)) continue;
+                    BlockState state = level.getBlockState(pos);
+                    if (state.isAir() || !state.getFluidState().isEmpty()) continue;
+                    if (state.getDestroySpeed(level, pos) < 0.0F) continue;           // bedrock etc.
+                    if ((broken % 24) == 0) level.levelEvent(2001, pos, Block.getId(state)); // break particles + sound (1 in 4)
+                    level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
+                    if (++broken >= GodzillaTuning.GRIEF_MAX_BLOCKS_PER_PASS) return;
+                }
+            }
+        }
+    }
+
+    private void stomp(ServerLevel level, boolean leftFoot) {
+        float r = this.yBodyRot * Mth.DEG_TO_RAD;
+        Vec3 fwd = new Vec3(-Mth.sin(r), 0.0, Mth.cos(r));
+        Vec3 side = new Vec3(Mth.cos(r), 0.0, Mth.sin(r));
+        Vec3 foot = this.position().add(fwd.scale(2.5)).add(side.scale(leftFoot ? 4.5 : -4.5));
+
+        this.playSound(ModSounds.STEP.get(), 10.0F, 0.75F + this.random.nextFloat() * 0.2F);
+        level.broadcastEntityEvent(this, EVENT_STOMP);   // client: camera shake
+
+        FxEntity.spawn(level, FxEntity.KIND_STEP, foot.x, foot.y, foot.z, 1.0F);   // custom dust burst (drawn client-side)
+
+        AABB zone = new AABB(foot, foot).inflate(GodzillaTuning.STOMP_RADIUS, 2.0, GodzillaTuning.STOMP_RADIUS);
+        for (LivingEntity e : level.getEntitiesOfClass(LivingEntity.class, zone, this::isValidVictim)) {
+            if (!e.onGround()) continue;                 // jump to dodge the shockwave
+            e.hurt(this.damageSources().mobAttack(this), GodzillaTuning.STOMP_DAMAGE);
+            e.setDeltaMovement(e.getDeltaMovement().add(0.0, 0.6, 0.0));
+            e.hurtMarked = true;
+        }
+    }
+
+    // ------------------------------------------------------------------ client events
+    @Override
+    public void handleEntityEvent(byte id) {
+        if (id == EVENT_STOMP) {
+            GodzillaClientHooks.onStomp(this);
+        } else if (id == EVENT_ROAR) {
+            GodzillaClientHooks.onRoar(this);
+        } else if (id == EVENT_BLAST) {
+            GodzillaClientHooks.onBlast(this);
+        } else if (id == EVENT_STOMP_ATTACK) {
+            GodzillaClientHooks.onStompAttack(this);
+        } else {
+            super.handleEntityEvent(id);
+        }
+    }
+
+    @Override
+    public AABB getBoundingBoxForCulling() {
+        // Tail sticks out of the hitbox; while firing, the beam does too (so it doesn't vanish when he's off-screen).
+        return isFiring() ? this.getBoundingBox().inflate(140.0, 40.0, 140.0) : this.getBoundingBox().inflate(50.0, 4.0, 50.0);
+    }
+
+    // ------------------------------------------------------------------ immunities / physics
+    @Override
+    public boolean isInvulnerableTo(DamageSource source) {
+        if (super.isInvulnerableTo(source)) return true;
+        if (source.is(DamageTypeTags.BYPASSES_INVULNERABILITY)) return false;   // /kill still works
+        if (source.is(DamageTypeTags.IS_FIRE) || source.is(DamageTypeTags.IS_DROWNING) || source.is(DamageTypeTags.IS_FALL)) return true;
+        if (source.getEntity() == this) return true;                             // own beam / craters
+        Entity direct = source.getDirectEntity();
+        return direct instanceof Arrow || direct instanceof SpectralArrow;       // "normal arrows"
+    }
+
+    @Override public boolean canBeAffected(MobEffectInstance effect) {
+        return !effect.getEffect().is(MobEffects.WITHER) && super.canBeAffected(effect);
+    }
+    @Override public boolean ignoreExplosion(Explosion explosion) { return true; }
+    @Override public boolean isPushedByFluid() { return false; }
+    @Override public boolean isPushable() { return false; }
+    @Override public boolean causeFallDamage(float distance, float multiplier, DamageSource source) { return false; }
+    @Override public boolean removeWhenFarAway(double distanceToClosestPlayer) { return false; }
+    @Override protected void playStepSound(BlockPos pos, BlockState state) { /* custom footsteps in stomp() */ }
+    @Override protected SoundEvent getHurtSound(DamageSource source) { return ModSounds.HURT.get(); }
+    @Override protected SoundEvent getDeathSound() { return ModSounds.DEATH.get(); }
+
+    // ------------------------------------------------------------------ death
+    @Override
+    public void die(DamageSource cause) {
+        this.entityData.set(DATA_ACTION, ACT_DEATH);
+        this.entityData.set(DATA_BEAM_LENGTH, 0.0F);
+        super.die(cause);
+    }
+
+    @Override
+    protected void tickDeath() {
+        this.deathTime++;
+        if (this.level() instanceof ServerLevel level && this.deathTime % 8 == 0 && this.deathTime < DEATH_TICKS) {
+            double x = this.getX() + (this.random.nextDouble() - 0.5) * 16.0;
+            double y = this.getY() + this.random.nextDouble() * 24.0;
+            double z = this.getZ() + (this.random.nextDouble() - 0.5) * 8.0;
+            FxEntity.spawn(level, FxEntity.KIND_BURST, x, y, z, 1.4F);
+        }
+        if (this.deathTime >= DEATH_TICKS && !this.level().isClientSide() && !this.isRemoved()) {
+            this.level().broadcastEntityEvent(this, (byte) 60);   // vanilla poof
+            this.remove(Entity.RemovalReason.KILLED);
+        }
+    }
+
+    // ------------------------------------------------------------------ boss bar
+    @Override public void startSeenByPlayer(ServerPlayer player) {
+        super.startSeenByPlayer(player);
+        this.bossEvent.addPlayer(player);
+    }
+    @Override public void stopSeenByPlayer(ServerPlayer player) {
+        super.stopSeenByPlayer(player);
+        this.bossEvent.removePlayer(player);
+    }
+    @Override public void setCustomName(@Nullable Component name) {
+        super.setCustomName(name);
+        this.bossEvent.setName(this.getDisplayName());
+    }
+    @Override public void readAdditionalSaveData(net.minecraft.nbt.CompoundTag tag) {
+        super.readAdditionalSaveData(tag);
+        if (this.hasCustomName()) this.bossEvent.setName(this.getDisplayName());
+    }
+
+    // ------------------------------------------------------------------ client animation inputs
+    public float getWalkPhase(float partialTick) { return Mth.lerp(partialTick, this.walkPhasePrev, this.walkPhase); }
+
+    /** True while the synced walk phase is advancing (i.e. he is striding). */
+    public boolean isWalkingClient() { return Math.abs(this.walkPhase - this.walkPhasePrev) > 1.0E-4F; }
+}
