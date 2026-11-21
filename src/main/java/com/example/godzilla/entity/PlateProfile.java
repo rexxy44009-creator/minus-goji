@@ -12,5 +12,6 @@ public final class PlateProfile {
     public static final double MOUTH_UP = 26.304;
     /** How far a plate pushes out (blocks, along +y) and how much it grows when extended. */
     public static final float PUSH_BLOCKS = 0.9F;
+    public static final float PUSH_UNITS = PUSH_BLOCKS * 16.0F;
     public static final float PUSH_SCALE = 0.45F;
 }
