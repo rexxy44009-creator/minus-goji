@@ -1,34 +1,52 @@
-package com.example.godzilla;
+package com.example.godzilla.client;
 
+import com.example.godzilla.GodzillaMod;
+import com.example.godzilla.GodzillaTuning;
 import com.example.godzilla.entity.GodzillaEntity;
-import com.example.godzilla.registry.ModEntities;
-import com.example.godzilla.registry.ModItems;
-import com.example.godzilla.registry.ModSounds;
-import net.minecraft.world.item.CreativeModeTabs;
-import net.neoforged.bus.api.IEventBus;
-import net.neoforged.fml.common.Mod;
-import net.neoforged.neoforge.event.BuildCreativeModeTabContentsEvent;
-import net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent;
+import com.example.godzilla.entity.PlateProfile;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.util.Mth;
+import software.bernie.geckolib.animation.AnimationState;
+import software.bernie.geckolib.constant.DataTickets;
+import software.bernie.geckolib.model.GeoModel;
 
-@Mod(GodzillaMod.MODID)
-public class GodzillaMod {
-    public static final String MODID = "godzilla_mod";
+public class GodzillaModel extends GeoModel<GodzillaEntity> {
+    private static final ResourceLocation MODEL = ResourceLocation.fromNamespaceAndPath(GodzillaMod.MODID, "geo/godzilla_minus_one.geo.json");
+    private static final ResourceLocation TEXTURE = ResourceLocation.fromNamespaceAndPath(GodzillaMod.MODID, "textures/entity/godzilla_minus_one.png");
+    private static final ResourceLocation ANIMATION = ResourceLocation.fromNamespaceAndPath(GodzillaMod.MODID, "animations/godzilla_minus_one.animation.json");
 
-    public GodzillaMod(IEventBus modBus) {
-        ModEntities.ENTITY_TYPES.register(modBus);
-        ModSounds.SOUNDS.register(modBus);
-        ModItems.ITEMS.register(modBus);
-        modBus.addListener(this::registerAttributes);
-        modBus.addListener(this::addToCreativeTab);
-    }
+    @Override public ResourceLocation getModelResource(GodzillaEntity animatable) { return MODEL; }
+    @Override public ResourceLocation getTextureResource(GodzillaEntity animatable) { return TEXTURE; }
+    @Override public ResourceLocation getAnimationResource(GodzillaEntity animatable) { return ANIMATION; }
 
-    private void registerAttributes(EntityAttributeCreationEvent event) {
-        event.put(ModEntities.GODZILLA_MINUS_ONE.get(), GodzillaEntity.createAttributes().build());
-    }
-
-    private void addToCreativeTab(BuildCreativeModeTabContentsEvent event) {
-        if (event.getTabKey() == CreativeModeTabs.SPAWN_EGGS) {
-            event.accept(ModItems.GODZILLA_SPAWN_EGG.get());
+    /**
+     * Runs every frame after the keyframe animation.
+     *  1) head follows where the entity is looking
+     *  2) glow overlay bones plate_glow_00..11 are shown/hidden so the plates light up one by one, tail -> head
+     */
+    @Override
+    public void setCustomAnimations(GodzillaEntity g, long instanceId, AnimationState<GodzillaEntity> state) {
+        var head = getAnimationProcessor().getBone("head");
+        var look = state.getData(DataTickets.ENTITY_MODEL_DATA);
+        if (head != null && look != null) {
+            head.setRotX(head.getRotX() + look.headPitch() * Mth.DEG_TO_RAD);
+            head.setRotY(head.getRotY() + look.netHeadYaw() * Mth.DEG_TO_RAD);
         }
+
+        float pt = state.getPartialTick();
+        for (int i = 0; i < GodzillaTuning.PLATE_COUNT; i++) {
+            float ext = g.getPlateExtension(i, pt);          // 0 = resting, 1 = pushed out
+            float push = ext * PlateProfile.PUSH_UNITS;
+            float scale = 1.0F + ext * PlateProfile.PUSH_SCALE;
+            var plate = getAnimationProcessor().getBone(String.format("plate_%02d", i));
+            var glow = getAnimationProcessor().getBone(String.format("plate_glow_%02d", i));
+            if (plate != null) { plate.setPosY(push); plate.setScaleX(scale); plate.setScaleY(scale); plate.setScaleZ(scale); }
+            if (glow != null) {
+                glow.setPosY(push); glow.setScaleX(scale); glow.setScaleY(scale); glow.setScaleZ(scale);
+                glow.setHidden(!g.isPlateLit(i, pt));
+            }
+        }
+        var mouth = getAnimationProcessor().getBone("mouth_glow");
+        if (mouth != null) mouth.setHidden(!g.isMouthGlowing(pt));
     }
 }
