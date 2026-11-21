@@ -18,3 +18,5 @@ jobs:
         with:
           name: godzilla_mod-jar
           path: build/libs/*.jar
+GodzillaModel.java
+PlateProfile.java
