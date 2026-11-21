@@ -1,3 +1,7 @@
+import software.bernie.geckolib.animatable.GeoEntity;
+import software.bernie.geckolib.animatable.instance.AnimatableInstanceCache;
+import software.bernie.geckolib.animation.AnimatableManager;
+import software.bernie.geckolib.util.GeckoLibUtil;
 package com.example.godzilla.entity;
 
 import com.example.godzilla.GodzillaTuning;
