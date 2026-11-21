@@ -1,45 +1,37 @@
-# Godzilla Minus One - boss mob (NeoForge 1.21.1 + GeckoLib 4)
+# Godzilla Minus One - boss mob (NeoForge 1.21.1, no other mods needed)
 
 Entity ID `godzilla_mod:godzilla_minus_one`  ->  `/summon godzilla_mod:godzilla_minus_one`, or the spawn egg in the creative tab.
-Build/install steps are in `BUILD_JAR.md`. **Never compiled by me**: expect a few small GeckoLib/API fixes on the first build (section 7).
+Build/install steps are in `BUILD_JAR.md`. **Never compiled or run by me**: expect a few small API fixes on the first build.
 
-## 1. Size
-Modelled and sized at **94 ft = 28.65 blocks tall** (head height, spikes add ~1.5 more) with a ~40 block tail. Hitbox 9 x 28.7.
-All ranges, damage radii, craters and the beam are scaled to match (`GodzillaTuning.java`).
+## What changed in this version
+- **Smooth model.** No more cubes. The original GLB is rigged (24 bones, smooth skin weights) and drawn as one skinned mesh with
+  its own textures (`client/mesh/GodzillaMesh`, `GodzillaRenderer`). Joints bend with no gaps; nothing separates when he moves or attacks.
+- **Film-style walk** (`entity/GodzillaAnim.walk`): slow and heavy; hips shift over the planted foot, the body rocks side to side,
+  shoulders counter-twist, head stays level, the 8-segment tail whips the opposite way in a travelling wave. The walk phase is synced
+  from the server, so each footfall (sound, shake, dust, damage) lands exactly when a foot hits the ground.
+- **All effects are custom** (no vanilla particles). Plate flames, arcs, charge orb, inhale streaks, the ray, the blast, stomp dust, radiation
+  patches are drawn by our own renderers (`client/fx/*`) using generated textures (`textures/fx`). They are pure functions of time, so
+  the server only spawns an invisible marker entity (`FxEntity`) and the client draws it.
+- **New roars** (three variants, picked at random): `tools/gen_roar.py`. Original synthesis (not the Toho recording).
 
-## 2. Attacks
-| Attack | What happens |
-|---|---|
-| Walking | Slow, 1 foot plant per second: custom sound, camera shake, dust, 12 dmg + hop to anything under the foot. Blocks inside and just ahead of the body are flattened (never the ground, never bedrock, never fluids). |
-| Jaw bite | Target in front. 60 dmg, launched skyward. |
-| Tail swipe | Target behind/flank. The whole ~34 block tail arc, 55 dmg, launched. |
-| **Stomp** | Target close in front (about half the time). He lifts the right foot and slams it down 8 blocks ahead: 5-power crater, dust rings, 14 block shockwave, 50 dmg + throw, big screen shake. |
-| **Atomic breath** | Target 18-64 blocks away. Roar -> **charge** -> **inhale** -> **fire (locked)** -> vent. See below. |
+## Atomic breath (like your reference video)
+1. **Roar.**  2. **Charge**: plates push out tail->head, each wrapped in jagged cyan energy flames + crackling arcs; a plasma orb grows at the mouth.
+3. **Inhale**: air streaks pour into the mouth, plates snap back, body locks.  4. **Fire** (locked, no tracking): white-hot core in cyan plasma with twisting
+streaks, a blinding flare at the mouth and impact, shock rings and molten spray where it hits the ground; terrain is carved, craters + radiation patches.
+5. **Blast**: white screen flash, boiling fireball, expanding ground shockwave with dust wall, rolling mushroom cloud, flying debris and embers, thunder;
+30 block crater, 95 block shockwave damage, trees/wood/glass stripped to 75 blocks (obeys `/gamerule mobGriefing`).
 
-### Atomic breath, stage by stage
-1. **Roar** (3 s): turns to face you; the roar is `sounds/roar.ogg`.
-2. **Charge** (4 s): the 14 dorsal plate groups **push out one by one starting at the tail**, each lighting blue with sparks and a chime.
-3. **Inhale** (1.5 s): head rears back, chest arches, jaw opens, air streams into the mouth, and **all plates snap back to their resting place** (tail first).
-4. **Fire** (5 s): **fully locked**: body, head and ray stay exactly where they were when the inhale began; nothing the target does changes it. (`BEAM_SWEEP_DEGREES` in `GodzillaTuning` can add a fixed sweep; 0 = locked.) The ray carves a 4.5-block-radius tunnel, burns and damages everything in it, drops craters and radiation clouds (Wither + Slowness).
-5. **Blast + mushroom cloud**: 6 ticks before the ray ends, it erupts where the ray meets the ground:
-   white flash, vanilla explosion (power 14), a **30 block radius crater** eaten out over ~10 ticks, a ground shockwave out to **95 blocks** (damage + throw), which also **strips trees, wood, glass, wool, leaves** out to 75 blocks, then a fire-and-smoke stem rising **~135 blocks** capped by a rolling **58 block radius** mushroom cap, with rumbling thunder. All block damage obeys `/gamerule mobGriefing`. Lower `BLAST_BLOCKS_PER_TICK` if a server stutters.
-6. **Vent** (2 s): steam, plates cool tail -> head.
+## Other attacks
+Jaw bite, tail swipe (whole 34 block arc), **stomp** (foot slam with custom shockwave), stomping footsteps (12 dmg, camera shake). All in `GodzillaTuning.java`.
 
-## 3. Model
-- Built from the supplied `minus_one_godzilla.glb`: sampled with its own texture, voxelised at half-block size, split into parts (head, jaw, torso, body, 2 arms, 2 legs, 6 tail segments, 14 dorsal plate groups) and merged into ~7,000 cubes with a 28-colour palette taken from the original texture. Regenerate with `python3 tools/glb_to_mod.py --render` (put the .glb in `tools/glb/`; needs numpy, pillow, scipy, trimesh, matplotlib). `PALETTE_K=40` gives more colour detail at more cubes.
-- Animations: `python3 tools/gen_animations.py` (idle, walk, roar, charge, inhale, fire, vent, bite, tail_swipe, stomp, death). Plates are animated in code (`GodzillaModel`, `PlateProfile.PUSH_UNITS`).
-- If something is tilted the wrong way in game, tell me which bone; rotation signs in the animation file are the likely cause.
+## Tools (all optional; outputs are already committed in `src/main/resources`)
+- `python3 tools/glb_to_mesh.py [--preview]` - rig + export the mesh (put the GLB in `tools/glb/`). Needs numpy pillow scipy trimesh matplotlib.
+- `python3 tools/gen_fx_textures.py` - effect textures.   `python3 tools/gen_roar.py [--spec]` - roars (needs numpy scipy soundfile).
 
-## 4. Sound
-- `roar.ogg` is an **original synthesised roar** made by `tools/gen_roar.py` (rising screech, long falling growl, bass thump, cave reverb). It is *not* the Toho recording, which is copyrighted. Replace it with any .ogg you have rights to, same file name.
-- Other sounds use pitched vanilla sounds as placeholders (`sounds.json`).
+## Where a first build is most likely to need fixes
+Rendering API names in `client/` (Camera vectors, VertexConsumer methods, RenderType factories) and the event classes in `ScreenFlash`/`CameraShake`.
+Visual tuning (flame size, beam width, blast scale, walk amplitudes) is all constants at the top of each effect function.
+If a bone bends the wrong way, flip the sign in `GodzillaAnim` for that bone.
 
-## 5. Tuning
-Everything is in `GodzillaTuning.java`: health, damage, ranges, stage durations, beam size, blast size, block budgets.
-
-## 6. Licence / credits
-See `CREDITS.md`. The model data is derived from a third-party Sketchfab model whose file says "Sketchfab Standard" licence; keep the repo and the jar **private** unless the creator allows redistribution.
-
-## 7. Where a first build is most likely to need fixes
-- GeckoLib 4.8.x: `GodzillaModel` (`setCustomAnimations`, `getAnimationProcessor().getBone(..)`, `setPosY / setScaleX/Y/Z / setHidden`, `DataTickets.ENTITY_MODEL_DATA`) and `GodzillaRenderer#getDeathMaxRotation`.
-- `MobEffects.MOVEMENT_SLOWDOWN` is the 1.21.1 name. Beam rendering uses `RenderType.lightning()` and `addVertex(...).setColor(...)`.
+## Licence / credits
+See `CREDITS.md`: the model is derived from a third-party Sketchfab model ("Sketchfab Standard" licence). Keep repo + jar private.

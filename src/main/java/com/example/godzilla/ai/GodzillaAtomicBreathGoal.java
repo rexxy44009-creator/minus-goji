@@ -5,7 +5,6 @@ import com.example.godzilla.entity.GodzillaEntity;
 import com.example.godzilla.registry.ModSounds;
 import java.util.EnumSet;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.LivingEntity;
@@ -106,6 +105,7 @@ public class GodzillaAtomicBreathGoal extends Goal {
     }
 
     // ------------------------------------------------------------------ stage 2: plates push out, tail -> head
+    // (all visuals are drawn client-side from the synced action; the server only does timing, sound and damage)
     private void tickCharge(ServerLevel level) {
         faceVictim(2.0F);
         lookAhead(20.0);
@@ -113,28 +113,9 @@ public class GodzillaAtomicBreathGoal extends Goal {
         float progress = (float) stageTick / GodzillaTuning.CHARGE_TICKS;
         int n = GodzillaTuning.PLATE_COUNT;
 
-        while (litSoFar < n && stageTick >= GodzillaEntity.plateStartTick(litSoFar)) {   // a plate starts sliding out
-            Vec3 p = g.getPlateWorldPos(litSoFar);
-            AtomicFx.send(level, ParticleTypes.ELECTRIC_SPARK, p.x, p.y + 1.0, p.z, 40, 2.0, 2.5, 2.0, 0.6);
-            AtomicFx.send(level, AtomicFx.BLUE_GLOW, p.x, p.y + 1.0, p.z, 18, 1.4, 2.2, 1.4, 0.0);
+        while (litSoFar < n && stageTick >= GodzillaEntity.plateStartTick(litSoFar)) {   // a plate starts sliding out: chime, pitch climbing
             g.playSound(ModSounds.PLATE.get(), 6.0F, 0.5F + progress);
             litSoFar++;
-        }
-
-        if (stageTick % 2 == 0) {          // shimmer on every plate that is out
-            for (int i = 0; i < litSoFar; i++) {
-                Vec3 p = g.getPlateWorldPos(i);
-                AtomicFx.send(level, AtomicFx.BLUE_GLOW, p.x, p.y + 2.5, p.z, 2, 0.9, 1.6, 0.9, 0.0);
-            }
-        }
-        if (stageTick % 8 == 0 && litSoFar > 0) {   // flashing lights
-            Vec3 p = g.getPlateWorldPos(g.getRandom().nextInt(litSoFar));
-            AtomicFx.send(level, ParticleTypes.FLASH, p.x, p.y + 2.5, p.z, 1, 0, 0, 0, 0);
-        }
-        if (progress > 0.5F) {              // energy gathering at the mouth
-            Vec3 m = g.getMouthPosition();
-            AtomicFx.send(level, ParticleTypes.ELECTRIC_SPARK, m.x, m.y, m.z, 4, 3.0, 3.0, 3.0, 0.2);
-            AtomicFx.send(level, AtomicFx.WHITE_CORE, m.x, m.y, m.z, 1, 0.4, 0.4, 0.4, 0.0);
         }
 
         if (stageTick >= GodzillaTuning.CHARGE_TICKS) {
@@ -156,17 +137,6 @@ public class GodzillaAtomicBreathGoal extends Goal {
             aim = fromYawPitch(lockedYaw, pitch);
         }
         holdLock();
-
-        Vec3 mouth = g.getMouthPosition();   // air rushes into the open mouth
-        for (int i = 0; i < 3; i++) {
-            double r = 10.0 + g.getRandom().nextDouble() * 14.0;
-            double a = g.getRandom().nextDouble() * Math.PI * 2.0, b = (g.getRandom().nextDouble() - 0.3) * 1.2;
-            Vec3 start = mouth.add(aim.scale(r)).add(Math.cos(a) * r * 0.5, Math.sin(b) * r * 0.5, Math.sin(a) * r * 0.5);
-            Vec3 v = mouth.subtract(start).scale(0.12);
-            AtomicFx.send(level, ParticleTypes.ELECTRIC_SPARK, start.x, start.y, start.z, 0, v.x, v.y, v.z, 1.0);
-            AtomicFx.send(level, ParticleTypes.CLOUD, start.x, start.y, start.z, 0, v.x * 0.8, v.y * 0.8, v.z * 0.8, 1.0);
-        }
-        AtomicFx.send(level, AtomicFx.WHITE_CORE, mouth.x, mouth.y, mouth.z, 1, 0.5, 0.5, 0.5, 0.0);
 
         if (stageTick >= GodzillaTuning.INHALE_TICKS) {
             stage = Stage.FIRE;
@@ -213,17 +183,6 @@ public class GodzillaAtomicBreathGoal extends Goal {
     // ------------------------------------------------------------------ stage 5: cool-down
     private void tickVent(ServerLevel level) {
         holdLock();
-        Vec3 mouth = g.getMouthPosition();
-        if (stageTick % 2 == 0) {
-            AtomicFx.send(level, ParticleTypes.CLOUD, mouth.x, mouth.y, mouth.z, 10, 1.0, 1.0, 1.0, 0.06);
-        }
-        if (stageTick % 3 == 0) {
-            int cooled = (int) ((float) stageTick / GodzillaTuning.VENT_TICKS * GodzillaTuning.PLATE_COUNT);
-            for (int i = cooled; i < GodzillaTuning.PLATE_COUNT; i++) {
-                Vec3 p = g.getPlateWorldPos(i);
-                AtomicFx.send(level, ParticleTypes.LARGE_SMOKE, p.x, p.y + 2.5, p.z, 1, 0.6, 0.9, 0.6, 0.02);
-            }
-        }
         if (stageTick >= GodzillaTuning.VENT_TICKS) {
             stage = null;   // canContinueToUse() turns false -> stop() sets IDLE and starts the cooldown
         }

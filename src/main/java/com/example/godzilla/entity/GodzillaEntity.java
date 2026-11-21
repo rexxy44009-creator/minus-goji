@@ -48,14 +48,6 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
-import software.bernie.geckolib.animatable.GeoEntity;
-import software.bernie.geckolib.animatable.instance.AnimatableInstanceCache;
-import software.bernie.geckolib.animation.AnimatableManager;
-import software.bernie.geckolib.animation.AnimationController;
-import software.bernie.geckolib.animation.AnimationState;
-import software.bernie.geckolib.animation.PlayState;
-import software.bernie.geckolib.animation.RawAnimation;
-import software.bernie.geckolib.util.GeckoLibUtil;
 
 /**
  * Godzilla Minus One boss mob.
@@ -63,7 +55,7 @@ import software.bernie.geckolib.util.GeckoLibUtil;
  * Server owns all behaviour; the client only receives DATA_ACTION (which animation / which plates glow)
  * and the beam yaw/pitch/length (so the client can render the beam). Everything else is server-side.
  */
-public class GodzillaEntity extends Monster implements GeoEntity {
+public class GodzillaEntity extends Monster {
 
     // ------------------------------------------------------------------ action state (synced)
     public static final int ACT_IDLE = 0;
@@ -92,27 +84,16 @@ public class GodzillaEntity extends Monster implements GeoEntity {
     private static final EntityDataAccessor<Float> DATA_BEAM_PITCH = SynchedEntityData.defineId(GodzillaEntity.class, EntityDataSerializers.FLOAT);
     private static final EntityDataAccessor<Float> DATA_BEAM_LENGTH = SynchedEntityData.defineId(GodzillaEntity.class, EntityDataSerializers.FLOAT);
 
-    // ------------------------------------------------------------------ GeckoLib
-    private static final String ANIM = "animation.godzilla_minus_one.";
-    private static final RawAnimation A_IDLE = RawAnimation.begin().thenLoop(ANIM + "idle");
-    private static final RawAnimation A_WALK = RawAnimation.begin().thenLoop(ANIM + "walk");
-    private static final RawAnimation A_ROAR = RawAnimation.begin().thenPlayAndHold(ANIM + "roar");
-    private static final RawAnimation A_CHARGE = RawAnimation.begin().thenPlayAndHold(ANIM + "charge");
-    private static final RawAnimation A_FIRE = RawAnimation.begin().thenLoop(ANIM + "fire");
-    private static final RawAnimation A_VENT = RawAnimation.begin().thenPlayAndHold(ANIM + "vent");
-    private static final RawAnimation A_BITE = RawAnimation.begin().thenPlayAndHold(ANIM + "bite");
-    private static final RawAnimation A_TAIL = RawAnimation.begin().thenPlayAndHold(ANIM + "tail_swipe");
-    private static final RawAnimation A_DEATH = RawAnimation.begin().thenPlayAndHold(ANIM + "death");
-    private static final RawAnimation A_STOMP = RawAnimation.begin().thenPlayAndHold(ANIM + "stomp");
-    private static final RawAnimation A_INHALE = RawAnimation.begin().thenPlayAndHold(ANIM + "inhale");
+    private static final EntityDataAccessor<Float> DATA_WALK_PHASE = SynchedEntityData.defineId(GodzillaEntity.class, EntityDataSerializers.FLOAT);
 
-    private final AnimatableInstanceCache cache = GeckoLibUtil.createInstanceCache(this);
+    /** Client-side procedural animation state (bone pose blending). Unused on the server. */
+    public final GodzillaAnim.State animState = new GodzillaAnim.State();
     private final ServerBossEvent bossEvent =
             new ServerBossEvent(this.getDisplayName(), BossEvent.BossBarColor.BLUE, BossEvent.BossBarOverlay.NOTCHED_10);
 
     private int actionStartTick;   // tickCount when DATA_ACTION last changed (both sides)
-    private int stepTimer;
-    private boolean leftFoot;
+    private float walkPhase, walkPhasePrev;   // radians; one foot lands every PI. Server computes, client reads.
+    private boolean phaseInit;
     private long breathReadyTime;  // game time when the atomic breath is available again (server)
 
     public GodzillaEntity(EntityType<? extends GodzillaEntity> type, Level level) {
@@ -143,6 +124,7 @@ public class GodzillaEntity extends Monster implements GeoEntity {
         builder.define(DATA_BEAM_YAW, 0.0F);
         builder.define(DATA_BEAM_PITCH, 0.0F);
         builder.define(DATA_BEAM_LENGTH, 0.0F);
+        builder.define(DATA_WALK_PHASE, 0.0F);
     }
 
     @Override
@@ -304,6 +286,10 @@ public class GodzillaEntity extends Monster implements GeoEntity {
     public void tick() {
         super.tick();
         if (this.level().isClientSide) {
+            float synced = this.entityData.get(DATA_WALK_PHASE);
+            this.walkPhasePrev = phaseInit ? this.walkPhase : synced;
+            this.walkPhase = synced;
+            this.phaseInit = true;
             GodzillaClientHooks.tick(this);
         }
     }
@@ -325,14 +311,16 @@ public class GodzillaEntity extends Monster implements GeoEntity {
             smashBlocksInBody(level);
         }
 
-        // Ground-shaking footsteps.
-        if (this.onGround() && this.getDeltaMovement().horizontalDistanceSqr() > 6.0E-4) {
-            if (--this.stepTimer <= 0) {
-                this.stepTimer = GodzillaTuning.STEP_INTERVAL_TICKS;
-                stomp(level);
+        // Walk cycle: the phase advances with distance travelled; every PI of phase one foot lands (even = left, odd = right).
+        double moved = Math.hypot(this.getX() - this.xo, this.getZ() - this.zo);
+        if (this.onGround() && moved > 0.01 && this.getAction() == ACT_IDLE) {
+            float before = this.walkPhase;
+            this.walkPhase += (float) (moved / GodzillaTuning.STEP_LENGTH_BLOCKS * Math.PI);
+            this.entityData.set(DATA_WALK_PHASE, this.walkPhase);
+            int stepsBefore = (int) Math.floor(before / Math.PI), stepsAfter = (int) Math.floor(this.walkPhase / Math.PI);
+            if (stepsAfter != stepsBefore) {
+                stomp(level, (stepsAfter & 1) == 0);
             }
-        } else {
-            this.stepTimer = Math.min(this.stepTimer, 5);
         }
     }
 
@@ -350,7 +338,7 @@ public class GodzillaEntity extends Monster implements GeoEntity {
                     BlockState state = level.getBlockState(pos);
                     if (state.isAir() || !state.getFluidState().isEmpty()) continue;
                     if (state.getDestroySpeed(level, pos) < 0.0F) continue;           // bedrock etc.
-                    if ((broken & 3) == 0) level.levelEvent(2001, pos, Block.getId(state)); // break particles + sound (1 in 4)
+                    if ((broken % 24) == 0) level.levelEvent(2001, pos, Block.getId(state)); // break particles + sound (1 in 4)
                     level.setBlock(pos, Blocks.AIR.defaultBlockState(), Block.UPDATE_ALL);
                     if (++broken >= GodzillaTuning.GRIEF_MAX_BLOCKS_PER_PASS) return;
                 }
@@ -358,21 +346,16 @@ public class GodzillaEntity extends Monster implements GeoEntity {
         }
     }
 
-    private void stomp(ServerLevel level) {
-        this.leftFoot = !this.leftFoot;
+    private void stomp(ServerLevel level, boolean leftFoot) {
         float r = this.yBodyRot * Mth.DEG_TO_RAD;
         Vec3 fwd = new Vec3(-Mth.sin(r), 0.0, Mth.cos(r));
         Vec3 side = new Vec3(Mth.cos(r), 0.0, Mth.sin(r));
-        Vec3 foot = this.position().add(fwd.scale(3.0)).add(side.scale(this.leftFoot ? 3.5 : -3.5));
+        Vec3 foot = this.position().add(fwd.scale(2.5)).add(side.scale(leftFoot ? 4.5 : -4.5));
 
         this.playSound(ModSounds.STEP.get(), 10.0F, 0.75F + this.random.nextFloat() * 0.2F);
         level.broadcastEntityEvent(this, EVENT_STOMP);   // client: camera shake
 
-        BlockState ground = level.getBlockState(BlockPos.containing(foot.x, foot.y - 0.5, foot.z));
-        if (!ground.isAir()) {
-            level.sendParticles(new BlockParticleOption(ParticleTypes.BLOCK, ground),
-                    foot.x, foot.y + 0.2, foot.z, 70, 3.0, 0.4, 3.0, 0.2);
-        }
+        FxEntity.spawn(level, FxEntity.KIND_STEP, foot.x, foot.y, foot.z, 1.0F);   // custom dust burst (drawn client-side)
 
         AABB zone = new AABB(foot, foot).inflate(GodzillaTuning.STOMP_RADIUS, 2.0, GodzillaTuning.STOMP_RADIUS);
         for (LivingEntity e : level.getEntitiesOfClass(LivingEntity.class, zone, this::isValidVictim)) {
@@ -439,12 +422,11 @@ public class GodzillaEntity extends Monster implements GeoEntity {
     @Override
     protected void tickDeath() {
         this.deathTime++;
-        if (this.level() instanceof ServerLevel level && this.deathTime % 5 == 0 && this.deathTime < DEATH_TICKS) {
-            double x = this.getX() + (this.random.nextDouble() - 0.5) * 8.0;
-            double y = this.getY() + this.random.nextDouble() * 12.0;
+        if (this.level() instanceof ServerLevel level && this.deathTime % 8 == 0 && this.deathTime < DEATH_TICKS) {
+            double x = this.getX() + (this.random.nextDouble() - 0.5) * 16.0;
+            double y = this.getY() + this.random.nextDouble() * 24.0;
             double z = this.getZ() + (this.random.nextDouble() - 0.5) * 8.0;
-            level.sendParticles(ParticleTypes.EXPLOSION, x, y, z, 3, 1.0, 1.0, 1.0, 0.0);
-            level.sendParticles(ParticleTypes.ELECTRIC_SPARK, x, y, z, 30, 2.0, 2.0, 2.0, 0.4);
+            FxEntity.spawn(level, FxEntity.KIND_BURST, x, y, z, 1.4F);
         }
         if (this.deathTime >= DEATH_TICKS && !this.level().isClientSide() && !this.isRemoved()) {
             this.level().broadcastEntityEvent(this, (byte) 60);   // vanilla poof
@@ -470,28 +452,9 @@ public class GodzillaEntity extends Monster implements GeoEntity {
         if (this.hasCustomName()) this.bossEvent.setName(this.getDisplayName());
     }
 
-    // ------------------------------------------------------------------ GeckoLib
-    @Override
-    public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
-        controllers.add(new AnimationController<GodzillaEntity>(this, "main", 4, this::animationPredicate));
-    }
+    // ------------------------------------------------------------------ client animation inputs
+    public float getWalkPhase(float partialTick) { return Mth.lerp(partialTick, this.walkPhasePrev, this.walkPhase); }
 
-    private PlayState animationPredicate(AnimationState<GodzillaEntity> state) {
-        RawAnimation anim = switch (getAction()) {
-            case ACT_ROAR -> A_ROAR;
-            case ACT_CHARGE -> A_CHARGE;
-            case ACT_FIRE -> A_FIRE;
-            case ACT_VENT -> A_VENT;
-            case ACT_BITE -> A_BITE;
-            case ACT_TAIL -> A_TAIL;
-            case ACT_DEATH -> A_DEATH;
-            case ACT_STOMP -> A_STOMP;
-            case ACT_INHALE -> A_INHALE;
-            default -> state.isMoving() ? A_WALK : A_IDLE;
-        };
-        return state.setAndContinue(anim);
-    }
-
-    @Override
-    public AnimatableInstanceCache getAnimatableInstanceCache() { return this.cache; }
+    /** True while the synced walk phase is advancing (i.e. he is striding). */
+    public boolean isWalkingClient() { return Math.abs(this.walkPhase - this.walkPhasePrev) > 1.0E-4F; }
 }

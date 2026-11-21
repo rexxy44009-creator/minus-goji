@@ -1,6 +1,7 @@
 package com.example.godzilla.ai;
 
 import com.example.godzilla.GodzillaTuning;
+import com.example.godzilla.entity.FxEntity;
 import com.example.godzilla.entity.GodzillaEntity;
 import com.example.godzilla.registry.ModSounds;
 import java.util.ArrayList;
@@ -11,7 +12,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.sounds.SoundSource;
@@ -102,16 +102,11 @@ public final class AtomicBlast {
         return craterOffsets;
     }
 
-    // ---------------------------------------------------------------- t = 0: flash + bang
+    // ---------------------------------------------------------------- t = 0: bang (visuals come from the FxEntity)
     private void ignite(GodzillaEntity owner) {
         double cx = center.x, cy = center.y, cz = center.z;
         level.explode(owner, cx, cy + 1.0, cz, GodzillaTuning.BLAST_POWER, true, Level.ExplosionInteraction.MOB);
-
-        AtomicFx.send(level, ParticleTypes.FLASH, cx, cy + 10.0, cz, 24, 12.0, 8.0, 12.0, 0.0);
-        AtomicFx.send(level, ParticleTypes.END_ROD, cx, cy + 6.0, cz, 700, 0.1, 0.1, 0.1, 2.4);            // white fireball
-        AtomicFx.send(level, ParticleTypes.EXPLOSION_EMITTER, cx, cy + 4.0, cz, 16, 14.0, 6.0, 14.0, 0.0);
-        AtomicFx.send(level, ParticleTypes.SOUL_FIRE_FLAME, cx, cy + 4.0, cz, 260, 0.3, 0.3, 0.3, 1.6);    // blue-white heart
-        AtomicFx.send(level, ParticleTypes.FLAME, cx, cy + 3.0, cz, 300, 0.3, 0.3, 0.3, 1.2);
+        FxEntity.spawn(level, FxEntity.KIND_BLAST, cx, cy, cz, 1.0F);   // the custom fireball, shockwave and mushroom cloud
 
         level.playSound(null, cx, cy, cz, ModSounds.BLAST.get(), SoundSource.HOSTILE, 120.0F, 0.8F);
         level.playSound(null, cx, cy, cz, SoundEvents.LIGHTNING_BOLT_THUNDER, SoundSource.HOSTILE, 120.0F, 0.45F);
@@ -127,8 +122,6 @@ public final class AtomicBlast {
             flatten();
         }
         shockwave(owner);
-        stem();
-        cap();
         if (age == 20 || age == 60) {   // the rolling rumble after the bang
             level.playSound(null, center.x, center.y, center.z, SoundEvents.LIGHTNING_BOLT_THUNDER, SoundSource.HOSTILE, 120.0F, 0.35F + age / 400.0F);
         }
@@ -197,15 +190,6 @@ public final class AtomicBlast {
     private void shockwave(Entity owner) {
         if (age > 38) return;
         double r = age * 2.6;
-        int n = Math.max(12, Math.min(52, (int) (TAU * r / 2.6)));
-        for (int k = 0; k < n; k++) {
-            double ang = TAU * k / n + age * 0.37;
-            double dx = Math.cos(ang), dz = Math.sin(ang);
-            double x = center.x + dx * r, z = center.z + dz * r, y = surfaceY(x, z) + 0.5;
-            AtomicFx.send(level, ParticleTypes.CAMPFIRE_COSY_SMOKE, x, y, z, 0, dx * 0.2, 0.07, dz * 0.2, 1.0);
-            AtomicFx.send(level, ParticleTypes.POOF, x, y + 1.0, z, 4, 1.4, 1.0, 1.4, 0.2);
-        }
-
         double reach = Math.min(r + 3.0, GodzillaTuning.BLAST_SHOCK_RADIUS);
         AABB zone = new AABB(center, center).inflate(reach, 60.0, reach);
         DamageSource src = level.damageSources().explosion(owner, owner);
@@ -226,64 +210,5 @@ public final class AtomicBlast {
     private boolean canHurt(LivingEntity e) {
         if (e instanceof GodzillaEntity || !e.isAlive()) return false;
         return !(e instanceof Player p && (p.isCreative() || p.isSpectator()));
-    }
-
-    // ---- the stem: a thick column of fire and smoke, widest at the base ------------------------------------------
-    private double stemHeight(int t) {
-        return GodzillaTuning.BLAST_STEM_HEIGHT * (1.0 - Math.exp(-t / 45.0));
-    }
-
-    private void stem() {
-        if (age > 190) return;
-        double H = GodzillaTuning.BLAST_STEM_HEIGHT;
-        double h = stemHeight(age);
-        for (int i = 0; i < 26; i++) {
-            double frac = level.random.nextDouble();
-            double y = center.y + 1.0 + frac * h;
-            double radius = (5.0 + 12.0 * (1.0 - frac) * (1.0 - frac)) * level.random.nextDouble();
-            double ang = level.random.nextDouble() * TAU;
-            double x = center.x + Math.cos(ang) * radius, z = center.z + Math.sin(ang) * radius;
-            double up = 0.16 + level.random.nextDouble() * 0.16;
-            double roll = level.random.nextDouble();
-            if (age < 70 && frac < 0.55 && roll < 0.45) {
-                AtomicFx.send(level, ParticleTypes.FLAME, x, y, z, 0, 0.0, up * 1.3, 0.0, 1.0);
-            } else if (roll < 0.62) {
-                AtomicFx.send(level, ParticleTypes.CAMPFIRE_COSY_SMOKE, x, y, z, 0, 0.0, up * 0.7, 0.0, 1.0);
-            } else if (roll < 0.82) {
-                AtomicFx.send(level, ParticleTypes.CAMPFIRE_SIGNAL_SMOKE, x, y, z, 0, 0.0, up * 0.5, 0.0, 1.0);
-            } else {
-                AtomicFx.send(level, ParticleTypes.LARGE_SMOKE, x, y, z, 0, 0.0, up, 0.0, 1.0);
-            }
-        }
-        if (age < 40) {   // blue-white atomic glow at the base
-            AtomicFx.send(level, ParticleTypes.SOUL_FIRE_FLAME, center.x, center.y + 3.0, center.z, 14, 6.0, 3.0, 6.0, 0.08);
-        }
-    }
-
-    // ---- the cap: a rolling torus riding the top of the stem (rises in the middle, spreads on top, falls outside) ---
-    private void cap() {
-        if (age < 8 || age > 200) return;
-        double R = GodzillaTuning.BLAST_CAP_RADIUS * (1.0 - Math.exp(-(age - 7) / 55.0));
-        double m = 0.36 * R + 3.0;                                  // tube radius
-        double cy = center.y + stemHeight(age) + 6.0;
-        for (int i = 0; i < 40; i++) {
-            double theta = level.random.nextDouble() * TAU;         // around the ring
-            double phi = level.random.nextDouble() * TAU;           // around the tube
-            double rx = Math.cos(theta), rz = Math.sin(theta);
-            double ring = R + m * Math.cos(phi);
-            double x = center.x + rx * ring, z = center.z + rz * ring, y = cy + m * Math.sin(phi) * 0.8;
-            double out = Math.sin(phi) * 0.2;                       // top: outward, bottom: inward
-            double vy = -Math.cos(phi) * 0.2;                       // outer edge: down, inner edge: up
-            double roll = level.random.nextDouble();
-            if (Math.sin(phi) < 0.0 && age < 110 && roll < 0.35) {
-                AtomicFx.send(level, ParticleTypes.FLAME, x, y, z, 0, rx * out, vy, rz * out, 1.0);   // glowing underside
-            } else if (roll < 0.55) {
-                AtomicFx.send(level, ParticleTypes.CAMPFIRE_COSY_SMOKE, x, y, z, 0, rx * out, vy * 0.6, rz * out, 1.0);
-            } else if (roll < 0.8) {
-                AtomicFx.send(level, ParticleTypes.CAMPFIRE_SIGNAL_SMOKE, x, y, z, 0, rx * out, vy * 0.4, rz * out, 1.0);
-            } else {
-                AtomicFx.send(level, ParticleTypes.LARGE_SMOKE, x, y, z, 0, rx * out, vy, rz * out, 1.0);
-            }
-        }
     }
 }

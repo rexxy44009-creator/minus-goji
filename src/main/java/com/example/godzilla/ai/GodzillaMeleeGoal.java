@@ -2,17 +2,14 @@ package com.example.godzilla.ai;
 
 import com.example.godzilla.GodzillaTuning;
 import com.example.godzilla.entity.GodzillaEntity;
+import com.example.godzilla.entity.FxEntity;
 import com.example.godzilla.registry.ModSounds;
 import java.util.EnumSet;
-import net.minecraft.core.BlockPos;
-import net.minecraft.core.particles.BlockParticleOption;
-import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.ai.goal.Goal;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.Vec3;
 
@@ -104,7 +101,6 @@ public class GodzillaMeleeGoal extends Goal {
         Vec3 mouth = g.getMouthPosition();
         Vec3 fwd = g.getForwardHoriz();
         g.playSound(ModSounds.BITE.get(), 8.0F, 0.7F);
-        AtomicFx.send(level, ParticleTypes.EXPLOSION, mouth.x + fwd.x * 3, mouth.y - 3, mouth.z + fwd.z * 3, 3, 1.5, 1.5, 1.5, 0);
         double r = GodzillaTuning.BITE_RADIUS;
         AABB zone = new AABB(mouth, mouth).inflate(r + 1.0);
         for (LivingEntity e : level.getEntitiesOfClass(LivingEntity.class, zone, g::isValidVictim)) {
@@ -122,12 +118,7 @@ public class GodzillaMeleeGoal extends Goal {
         Vec3 fwd = g.getForwardHoriz();
         g.playSound(ModSounds.TAIL.get(), 8.0F, 0.6F);
         double reach = GodzillaTuning.TAIL_RADIUS;
-        for (int i = 0; i < 14; i++) {   // visible shock arc behind him
-            double ang = Math.PI * (0.55 + 0.9 * i / 13.0);
-            double r = reach * (0.35 + 0.65 * (i % 4) / 3.0);
-            Vec3 dir = rotateY(fwd, ang);
-            AtomicFx.send(level, ParticleTypes.EXPLOSION, g.getX() + dir.x * r, g.getY() + 2.0, g.getZ() + dir.z * r, 1, 0, 0, 0, 0);
-        }
+        FxEntity.spawn(level, FxEntity.KIND_STOMP, g.getX(), g.getY(), g.getZ(), 1.5F);   // custom dust shock around the sweep
         AABB zone = g.getBoundingBox().inflate(reach, 6.0, reach);
         for (LivingEntity e : level.getEntitiesOfClass(LivingEntity.class, zone, g::isValidVictim)) {
             Vec3 flat = e.position().subtract(g.position()).multiply(1, 0, 1);
@@ -150,21 +141,7 @@ public class GodzillaMeleeGoal extends Goal {
         level.broadcastEntityEvent(g, GodzillaEntity.EVENT_STOMP_ATTACK);   // client: heavy screen shake
         level.explode(g, impact.x, impact.y + 0.5, impact.z, GodzillaTuning.STOMP_ATTACK_CRATER, false, Level.ExplosionInteraction.MOB);
 
-        // expanding dust ring + flying debris
-        BlockState ground = level.getBlockState(BlockPos.containing(impact.x, impact.y - 1.0, impact.z));
-        for (int ring = 1; ring <= 4; ring++) {
-            double r = ring * GodzillaTuning.STOMP_ATTACK_RADIUS / 4.0;
-            int n = 10 + ring * 6;
-            for (int k = 0; k < n; k++) {
-                double ang = Math.PI * 2.0 * k / n;
-                double dx = Math.cos(ang), dz = Math.sin(ang);
-                AtomicFx.send(level, ParticleTypes.CAMPFIRE_COSY_SMOKE, impact.x + dx * r, impact.y + 0.4, impact.z + dz * r, 0, dx * 0.2, 0.05, dz * 0.2, 1.0);
-                if (!ground.isAir()) {
-                    AtomicFx.send(level, new BlockParticleOption(ParticleTypes.BLOCK, ground), impact.x + dx * r, impact.y + 0.6, impact.z + dz * r, 6, 0.6, 0.5, 0.6, 0.25);
-                }
-            }
-        }
-        AtomicFx.send(level, ParticleTypes.EXPLOSION_EMITTER, impact.x, impact.y + 1.0, impact.z, 1, 0, 0, 0, 0);
+        FxEntity.spawn(level, FxEntity.KIND_STOMP, impact.x, impact.y, impact.z, 1.0F);   // custom shockwave, dust wall and debris
 
         AABB zone = new AABB(impact, impact).inflate(GodzillaTuning.STOMP_ATTACK_RADIUS, 8.0, GodzillaTuning.STOMP_ATTACK_RADIUS);
         for (LivingEntity e : level.getEntitiesOfClass(LivingEntity.class, zone, g::isValidVictim)) {

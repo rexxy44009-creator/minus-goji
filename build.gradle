@@ -27,11 +27,7 @@ sourceSets.main.resources {
 }
 
 repositories {
-    maven {
-        name = 'GeckoLib'
-        url = 'https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/'
-        content { includeGroup 'software.bernie.geckolib' }
-    }
+    // (no extra repositories needed: the mod no longer depends on GeckoLib)
 }
 
 base {
@@ -120,9 +116,6 @@ configurations {
 }
 
 dependencies {
-    // Animation/model library used for the boss (also a required mod at runtime, see neoforge.mods.toml)
-    implementation "software.bernie.geckolib:geckolib-neoforge-1.21.1:4.8.4"
-
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
     // compileOnly "mezz.jei:jei-${mc_version}-common-api:${jei_version}"

@@ -1,9 +1,9 @@
 package com.example.godzilla.ai;
 
 import com.example.godzilla.GodzillaTuning;
+import com.example.godzilla.entity.FxEntity;
 import com.example.godzilla.entity.GodzillaEntity;
 import net.minecraft.core.BlockPos;
-import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.util.Mth;
 import net.minecraft.world.effect.MobEffectInstance;
@@ -36,15 +36,6 @@ public final class AtomicBeam {
         if (grief) carve(level, origin, dir, length);
         damage(g, level, origin, dir, length, fireTick);
         if (grief && fireTick % GodzillaTuning.CRATER_INTERVAL_TICKS == 0) craters(g, level, origin, dir, length);
-
-        // light show: white-hot core at the mouth, sparks all along the ray
-        AtomicFx.send(level, AtomicFx.WHITE_CORE, origin.x, origin.y, origin.z, 8, 1.2, 1.2, 1.2, 0.0);
-        if (fireTick % 3 == 0) {
-            for (double d = 8.0; d <= length; d += 10.0) {
-                Vec3 p = origin.add(dir.scale(d));
-                AtomicFx.send(level, ParticleTypes.ELECTRIC_SPARK, p.x, p.y, p.z, 8, 3.5, 3.5, 3.5, 0.3);
-            }
-        }
     }
 
     // ---------------------------------------------------------------- terrain carving
@@ -130,7 +121,8 @@ public final class AtomicBeam {
         cloud.setDuration(GodzillaTuning.RADIATION_DURATION_TICKS);
         cloud.setRadiusPerTick(-GodzillaTuning.RADIATION_RADIUS * 0.5F / GodzillaTuning.RADIATION_DURATION_TICKS); // shrinks to half
         cloud.setWaitTime(0);
-        cloud.setParticle(AtomicFx.RADIATION);
+        cloud.setParticle(new net.minecraft.core.particles.DustParticleOptions(new org.joml.Vector3f(0.2F, 1.0F, 0.4F), 0.01F));   // practically invisible: the look is a custom FxEntity
+        FxEntity.spawn(level, FxEntity.KIND_RADIATION, at.x, at.y, at.z, GodzillaTuning.RADIATION_RADIUS, GodzillaTuning.RADIATION_DURATION_TICKS);
         // AreaEffectCloud applies a quarter of the listed duration, so 400 here = 5 s of effect per application.
         cloud.addEffect(new MobEffectInstance(MobEffects.WITHER, 400, 1));
         cloud.addEffect(new MobEffectInstance(MobEffects.MOVEMENT_SLOWDOWN, 400, 2));

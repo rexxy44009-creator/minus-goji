@@ -3,9 +3,16 @@
     "subtitle": "subtitles.godzilla_mod.roar",
     "sounds": [
       {
-        "name": "godzilla_mod:roar",
-        "volume": 5.0,
-        "pitch": 1.0
+        "name": "godzilla_mod:roar_1",
+        "volume": 5.0
+      },
+      {
+        "name": "godzilla_mod:roar_2",
+        "volume": 5.0
+      },
+      {
+        "name": "godzilla_mod:roar_3",
+        "volume": 5.0
       }
     ]
   },

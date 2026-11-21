@@ -6,4 +6,4 @@
   `PlateProfile.java` in this project are generated from that model, so treat them the same way: private/personal use only unless the
   creator gives permission. The .glb itself is not included in this project.
 - **Roar:** synthesised from scratch by `tools/gen_roar.py` (original audio, not a Toho recording).
-- **GeckoLib** (animation library) is a separate required mod with its own licence.
+- No third-party mods are required.

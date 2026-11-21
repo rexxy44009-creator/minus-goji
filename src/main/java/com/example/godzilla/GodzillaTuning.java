@@ -8,7 +8,7 @@ public final class GodzillaTuning {
     public static final double MAX_HEALTH = 5000.0;
     public static final double ARMOR = 30.0;             // vanilla attribute cap
     public static final double ARMOR_TOUGHNESS = 20.0;   // vanilla attribute cap
-    public static final double MOVE_SPEED = 0.17;        // zombie = 0.23. Slow and lumbering (but his stride is huge)
+    public static final double MOVE_SPEED = 0.22;        // ~4 blocks/s: a footfall about every 2 s
     public static final double FOLLOW_RANGE = 64.0;      // aggro radius (players, villagers, iron golems)
     public static final double STEP_HEIGHT = 4.0;
     public static final float HITBOX_WIDTH = 9.0F;
@@ -22,7 +22,7 @@ public final class GodzillaTuning {
     public static final double GRIEF_HORIZONTAL_MARGIN = 1.5;
 
     // ---- footsteps ----
-    public static final int STEP_INTERVAL_TICKS = 20;    // matches the walk animation (one foot plant per second)
+    public static final double STEP_LENGTH_BLOCKS = 9.0;  // distance between footfalls (drives the walk animation phase)
     public static final float STOMP_DAMAGE = 12.0F;
     public static final double STOMP_RADIUS = 7.0;
 

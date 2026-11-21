@@ -14,5 +14,6 @@ public final class ClientModEvents {
     @SubscribeEvent
     public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
         event.registerEntityRenderer(ModEntities.GODZILLA_MINUS_ONE.get(), GodzillaRenderer::new);
+        event.registerEntityRenderer(ModEntities.FX.get(), FxRenderer::new);
     }
 }
